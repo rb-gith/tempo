@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light only">
+<meta name="theme-color" content="#F7F8FA">
+<meta name="description" content="Track the hours you spend on each project: a quick daily log with notes, and totals per week, month and year. Offline and private.">
+<title>Tempo</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app"></div>
+<nav class="tabs" id="tabs" hidden>
+  <button data-act="tab" data-tab="day" id="tab-day"></button>
+  <button data-act="tab" data-tab="totals" id="tab-totals"></button>
+</nav>
+<div id="toast" class="toast" role="status" hidden></div>
+<dialog id="sheet" class="sheet"></dialog>
+
+<script src="lang.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
