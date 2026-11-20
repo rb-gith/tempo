@@ -9,7 +9,7 @@
 const DATA_KEY = 'tempo-v1';
 const SETTINGS_KEY = 'tempo-settings';
 const COFFEE_URL = 'https://buymeacoffee.com/gionzana';
-const GITHUB_URL = 'https://github.com/rb-gith?tab=repositories';
+const MORE_APPS_URL = 'https://rb-gith.github.io/';
 const QUICK = [0.5, 1, 2, 4, 8];
 const MAX_HOURS = 24;
 const COLORS = ['#534AB7', '#0F6E56', '#B5532F', '#2F6FB0', '#A33A6B', '#8A6D12', '#3D7D2E', '#2E7F86', '#7A4FA0', '#B0472F', '#5B6B7F', '#9A5B12'];
@@ -175,6 +175,9 @@ function render() {
   $('#tab-day').setAttribute('aria-current', tab === 'day' ? 'page' : 'false');
   $('#tab-totals').setAttribute('aria-current', tab === 'totals' ? 'page' : 'false');
   scrollTo(0, same ? y : 0);
+  const heat = $('.heat-scroll');
+  /* Today's week sits near the right edge, with the weeks before it in view */
+  if (heat) heat.scrollLeft = Math.max(0, (Number(heat.dataset.focus) || 0) - heat.clientWidth + 48);
   if (name === 'add' && !ui.form.entry) { const p = $('#f-project'); if (p) p.focus(); }
 }
 
@@ -183,7 +186,7 @@ const svg = {
 };
 const creditHtml = () => `<footer class="credit">
   <p>${tr('madeBy')} · <a href="${COFFEE_URL}" target="_blank" rel="noopener">${tr('coffee')}</a></p>
-  <p>${tr('moreApps', `<a href="${GITHUB_URL}" target="_blank" rel="noopener">github</a>`)}</p>
+  <p>${tr('moreApps', `<a href="${MORE_APPS_URL}" target="_blank" rel="noopener">${tr('moreAppsLink')}</a>`)}</p>
 </footer>`;
 const longDate = k => dateOf(k).toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' });
 const dayWord = k => k === todayKey() ? tr('today') : k === addDays(todayKey(), -1) ? tr('yesterday') : String(dateOf(k).getFullYear());
@@ -356,13 +359,150 @@ function totalsHtml() {
       <b>${esc(periodLabel(range))}</b>
       <button class="icon-btn" data-act="period-next" aria-label="${tr('nextPeriod')}">›</button>
     </div>
-    ${rows.length ? `<div class="card">${rows.map(r => `<button class="proj" data-act="open-project" data-id="${esc(r.p.id)}">
+    ${rows.length && ui.period === 'week' ? weekChartHtml(range[0], inRange) + compareHtml(range[0], inRange) : ''}
+    ${ui.period === 'year' && rows.length ? heatmapHtml(dateOf(range[0]).getFullYear()) : ''}
+    ${rows.length ? `<h3 class="chart-title">${tr('byProject')}</h3><div class="card">${rows.map(r => `<button class="proj" data-act="open-project" data-id="${esc(r.p.id)}">
         <span class="t"><span>${esc(r.p.name)}</span><span><b>${fmtH(r.h)}</b> · ${Math.round((r.h / total) * 100)}%</span></span>
         <span class="track"><span style="--c:${r.p.color};width:${Math.max(2, (r.h / max) * 100)}%"></span></span>
       </button>`).join('')}</div>
       <p class="sum"><span>${tr('total')}</span><span>${fmtH(total)}</span></p>` : `<p class="empty">${tr('nothingInPeriod')}</p>`}
     ${creditHtml()}
   </div>`;
+}
+
+/* ---------- Charts on the Totals tab ---------- */
+const OTHER_COLOR = '#9AA4B1';
+const HEAT = ['#E8ECF1', '#C3D3E8', '#8BAAD2', '#4F79B0', '#24476F'];
+const heatLevel = h => h <= 0 ? 0 : h <= 2 ? 1 : h <= 4 ? 2 : h <= 6 ? 3 : 4;
+const fmtDelta = d => Math.abs(d) < 0.01 ? '=' : (d > 0 ? '+' : '−') + fmtH(Math.abs(d));
+const weekdayName = (k, style) => dateOf(k).toLocaleDateString(locale(), { weekday: style });
+
+/* The 4 projects with the most hours get their own colour; the rest are grouped as "Other".
+   With 5 projects or fewer, every project is shown. */
+function topGroups(list) {
+  const by = new Map();
+  list.forEach(e => by.set(e.projectId, (by.get(e.projectId) || 0) + e.hours));
+  const ranked = [...by.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  const top = ranked.length > 5 ? ranked.slice(0, 4) : ranked;
+  const groups = top.map(id => { const p = projectById(id); return { key: id, name: p.name, color: p.color }; });
+  if (ranked.length > top.length) groups.push({ key: 'other', name: tr('other'), color: OTHER_COLOR });
+  return { groups, groupOf: id => (top.includes(id) ? id : 'other') };
+}
+function legendHtml(groups) {
+  return `<div class="legend">${groups.map(g => `<span><i style="--c:${g.color}"></i>${esc(g.name)}</span>`).join('')}</div>`;
+}
+/* A bar segment with rounded top corners only */
+function roundTop(x, y, w, h, r) {
+  r = Math.min(r, h, w / 2);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+
+/* 2 · Hours per day of the shown week, stacked by project. Tapping a day opens it. */
+function weekChartHtml(start, list) {
+  const { groups, groupOf } = topGroups(list);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  const totals = days.map(k => sumHours(list.filter(e => e.date === k)));
+  const max = Math.max(4, ...totals);
+  const step = max <= 8 ? 2 : max <= 16 ? 4 : 6;
+  const top = Math.ceil(max / step) * step;
+  const W = 320, L = 24, T = 18, B = 150, plotH = B - T;
+  const slot = (W - L) / 7, bw = Math.min(26, slot * 0.6);
+  let out = '';
+  for (let v = 0; v <= top; v += step) {
+    const y = B - (v / top) * plotH;
+    out += `<line class="grid" x1="${L}" x2="${W}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 6}" y="${y + 4}" text-anchor="end">${v}</text>`;
+  }
+  days.forEach((k, i) => {
+    const x = L + slot * i + (slot - bw) / 2;
+    const dayList = list.filter(e => e.date === k);
+    const segs = groups.map(g => ({ g, h: sumHours(dayList.filter(e => groupOf(e.projectId) === g.key)) })).filter(s => s.h > 0);
+    const tip = `${weekdayName(k, 'long')}: ${fmtH(totals[i])}` + segs.map(s => `\n${s.g.name} ${fmtH(s.h)}`).join('');
+    out += `<g class="col" data-act="open-day" data-day="${k}"><title>${esc(tip)}</title>
+      <rect class="hit" x="${L + slot * i}" y="0" width="${slot}" height="${B + 22}"/>`;
+    let y = B;
+    segs.forEach((s, j) => {
+      const h = (s.h / top) * plotH;
+      const yTop = y - h;
+      /* A 2px gap separates stacked segments; only the top one has rounded corners */
+      if (j === segs.length - 1) out += `<path d="${roundTop(x, yTop, bw, Math.max(1, h), 4)}" fill="${s.g.color}"/>`;
+      else out += `<rect x="${x}" y="${yTop + 2}" width="${bw}" height="${Math.max(1, h - 2)}" fill="${s.g.color}"/>`;
+      y = yTop;
+    });
+    if (totals[i]) out += `<text class="val" x="${x + bw / 2}" y="${y - 5}" text-anchor="middle">${fmtNum(totals[i])}</text>`;
+    out += `<text class="ax${k === todayKey() ? ' today' : ''}" x="${x + bw / 2}" y="${B + 17}" text-anchor="middle">${esc(weekdayName(k, 'narrow'))}</text></g>`;
+  });
+  return `<h3 class="chart-title">${tr('perDay')}</h3>
+    <div class="card chart"><svg viewBox="0 0 ${W} ${B + 24}" role="img" aria-label="${esc(tr('perDay'))}">${out}</svg>
+    ${legendHtml(groups)}<p class="chart-hint">${tr('tapDay')}</p></div>`;
+}
+
+/* 4 · The shown week compared with the week before, per project */
+function compareHtml(start, list) {
+  const prevStart = addDays(start, -7);
+  const prev = data.entries.filter(e => e.date >= prevStart && e.date < start);
+  const { groups, groupOf } = topGroups(list.concat(prev));
+  const rows = groups.map(g => ({
+    g,
+    now: sumHours(list.filter(e => groupOf(e.projectId) === g.key)),
+    before: sumHours(prev.filter(e => groupOf(e.projectId) === g.key)),
+  }));
+  const max = Math.max(1, ...rows.map(r => Math.max(r.now, r.before)));
+  const pct = h => (h / max) * 100;
+  const total = sumHours(list), totalBefore = sumHours(prev);
+  return `<h3 class="chart-title">${tr('vsWeekBefore')}</h3>
+    <div class="card chart cmp">${rows.map(r => {
+      const a = pct(r.before), b = pct(r.now);
+      return `<div class="cmp-row" title="${esc(`${r.g.name}: ${fmtH(r.before)} → ${fmtH(r.now)}`)}">
+        <span class="cmp-name">${esc(r.g.name)}</span>
+        <span class="cmp-track">
+          <span class="cmp-line" style="--c:${r.g.color};left:${Math.min(a, b)}%;width:${Math.abs(b - a)}%"></span>
+          <span class="cmp-dot before" style="--c:${r.g.color};left:${a}%"></span>
+          <span class="cmp-dot now" style="--c:${r.g.color};left:${b}%"></span>
+        </span>
+        <span class="cmp-delta">${fmtDelta(r.now - r.before)}</span>
+      </div>`;
+    }).join('')}
+      <div class="cmp-foot"><span><i class="cmp-key before"></i>${tr('weekBefore')} <i class="cmp-key now"></i>${tr('thisWeek')}</span>
+      <span>${tr('total')} <b>${fmtH(total)}</b> (${fmtDelta(total - totalBefore)})</span></div>
+    </div>`;
+}
+
+/* 1 · Every day of the year, darker = more hours. Scrolls sideways; opens on the latest weeks. */
+function heatmapHtml(year) {
+  const jan1 = `${year}-01-01`;
+  const start = addDays(jan1, -((dateOf(jan1).getDay() + 6) % 7));
+  const end = `${year}-12-31`, today = todayKey();
+  const perDay = new Map();
+  data.entries.forEach(e => { if (e.date >= jan1 && e.date <= end) perDay.set(e.date, (perDay.get(e.date) || 0) + e.hours); });
+  const C = 13, G = 3, S = C + G, TOP = 16;
+  let out = '', col = 0, focus = 0, lastMonth = -1;
+  for (let wk = start; wk <= end; wk = addDays(wk, 7), col++) {
+    for (let d = 0; d < 7; d++) {
+      const k = addDays(wk, d);
+      if (k < jan1 || k > end) continue;
+      const m = dateOf(k).getMonth();
+      if (d === 0 || k === jan1) {
+        if (m !== lastMonth && (k.slice(8) <= '07')) {
+          out += `<text class="ax" x="${col * S}" y="10">${esc(dateOf(k).toLocaleDateString(locale(), { month: 'short' }))}</text>`;
+          lastMonth = m;
+        }
+      }
+      if (k > today) { out += `<rect x="${col * S}" y="${TOP + d * S}" width="${C}" height="${C}" rx="3" class="future"/>`; continue; }
+      const h = perDay.get(k) || 0;
+      if (k === today) focus = col;
+      out += `<rect x="${col * S}" y="${TOP + d * S}" width="${C}" height="${C}" rx="3" fill="${HEAT[heatLevel(h)]}" data-act="open-day" data-day="${k}"${k === today ? ' class="is-today"' : ''}><title>${esc(longDate(k))}: ${fmtH(h)}</title></rect>`;
+    }
+  }
+  if (today > end) focus = col - 1;
+  const width = col * S, height = TOP + 7 * S;
+  const labels = [0, 2, 4].map(d => `<text class="ax" x="0" y="${TOP + d * S + 10}">${esc(weekdayName(addDays(start, d), 'short'))}</text>`).join('');
+  return `<h3 class="chart-title">${tr('dayByDay')}</h3>
+    <div class="card chart heat">
+      <div class="heat-wrap"><svg class="heat-days" viewBox="0 0 30 ${height}" width="30" height="${height}" aria-hidden="true">${labels}</svg>
+      <div class="heat-scroll" data-focus="${focus * S + C}"><svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="${esc(tr('dayByDay'))}">${out}</svg></div></div>
+      <div class="heat-legend"><span>${tr('less')}</span>${HEAT.map(c => `<i style="--c:${c}"></i>`).join('')}<span>${tr('more')}</span></div>
+      <p class="chart-hint">${tr('tapDay')}</p>
+    </div>`;
 }
 
 /* ---------- A project: all its days and notes ---------- */
@@ -382,7 +522,11 @@ const sheet = $('#sheet');
 function openProjectSheet(p) {
   const used = data.entries.some(e => e.projectId === p.id);
   sheet.innerHTML = `<form id="project-form" method="dialog" novalidate data-id="${esc(p.id)}">
-    <h3>${tr('editProject')}</h3>
+    <div class="sheet-bar">
+      <button type="button" class="bar-btn" data-act="sheet-close">${tr('cancel')}</button>
+      <h3>${tr('editProject')}</h3>
+      <button class="save-btn">${tr('save')}</button>
+    </div>
     <label class="field"><span>${tr('projectName')}</span>
       <input type="text" name="name" value="${esc(p.name)}" maxlength="60" autocomplete="off"></label>
     <p class="error" id="name-error" hidden></p>
@@ -393,7 +537,6 @@ function openProjectSheet(p) {
     <div class="btns">
       ${used ? `<button type="button" class="btn" data-act="toggle-archive">${p.archived ? tr('unarchive') : tr('archive')}</button>`
              : `<button type="button" class="btn danger" data-act="delete-project">${tr('delete')}</button>`}
-      <button class="btn primary grow">${tr('save')}</button>
     </div>
   </form>`;
   sheet.showModal();
@@ -524,6 +667,7 @@ document.addEventListener('click', ev => {
     }
     case 'quick': { const h = $('#f-hours'); h.value = fmtNum(Number(b.dataset.h)); $('#hours-error').hidden = true; break; }
     case 'delete-entry': if (ui.form && ui.form.entry) deleteEntry(ui.form.entry); break;
+    case 'open-day': if (isDate(b.dataset.day)) { ui.day = b.dataset.day; switchTab('day'); } break;
     case 'period': ui.period = b.dataset.period; ui.anchor = todayKey(); render(); break;
     case 'period-prev': movePeriod(-1); break;
     case 'period-next': movePeriod(1); break;
@@ -534,6 +678,7 @@ document.addEventListener('click', ev => {
       sheet.querySelector('[name="color"]').value = b.dataset.color;
       break;
     }
+    case 'sheet-close': sheet.close(); break;
     case 'toggle-archive': { const p = projectById(sheet.querySelector('form').dataset.id); if (p) toggleArchive(p); break; }
     case 'delete-project': { const p = projectById(sheet.querySelector('form').dataset.id); if (p) deleteProject(p); break; }
     case 'lang': setLang(b.dataset.lang); break;

@@ -45,6 +45,16 @@ const TEXT = {
     nextPeriod: 'Next',
     total: 'Total',
     nothingInPeriod: 'No hours in this period',
+    perDay: 'Hours per day',
+    vsWeekBefore: 'Compared with the week before',
+    weekBefore: 'week before',
+    thisWeek: 'this week',
+    dayByDay: 'Day by day',
+    byProject: 'By project',
+    other: 'Other',
+    less: 'less',
+    more: 'more',
+    tapDay: 'Tap a day to see its entries',
 
     projectTotal: '{} in total',
     archived: 'archived',
@@ -76,7 +86,8 @@ const TEXT = {
 
     madeBy: 'made by gionzana',
     coffee: '☕ buy me a coffee',
-    moreApps: 'find more apps by me on {}',
+    moreApps: 'find more {}',
+    moreAppsLink: 'apps by me',
   },
   it: {
     appName: 'Tempo',
@@ -121,6 +132,16 @@ const TEXT = {
     nextPeriod: 'Successivo',
     total: 'Totale',
     nothingInPeriod: 'Nessuna ora in questo periodo',
+    perDay: 'Ore al giorno',
+    vsWeekBefore: 'Rispetto alla settimana prima',
+    weekBefore: 'settimana prima',
+    thisWeek: 'questa settimana',
+    dayByDay: 'Giorno per giorno',
+    byProject: 'Per progetto',
+    other: 'Altro',
+    less: 'meno',
+    more: 'più',
+    tapDay: 'Tocca un giorno per vederne le voci',
 
     projectTotal: '{} in totale',
     archived: 'archiviato',
@@ -152,6 +173,7 @@ const TEXT = {
 
     madeBy: 'creata da gionzana',
     coffee: '☕ offrimi un caffè',
-    moreApps: 'trova altre mie app su {}',
+    moreApps: 'trova altre {}',
+    moreAppsLink: 'mie app',
   },
 };
